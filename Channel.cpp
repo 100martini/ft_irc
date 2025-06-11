@@ -104,12 +104,14 @@ bool Channel::canJoin(Client* client, const std::string& key) const {
 }
 
 void Channel::broadcast(const std::string& message, Client* exclude) {
-    for (std::set<Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
-        if (*it != exclude) {
-            // This would normally send to the client, but we need server access
-            // The server will handle this through _sendToClient
-        }
-    }
+    // Suppress unused parameter warning - this method is called by Server
+    // which handles the actual message sending through _sendToChannel
+    (void)message;
+    (void)exclude;
+    
+    // Note: The actual broadcasting is handled by Server::_sendToChannel
+    // This method exists for interface consistency but the Server class
+    // handles the actual message transmission to avoid circular dependencies
 }
 
 std::string Channel::getModeString() const {
