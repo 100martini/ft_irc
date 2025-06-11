@@ -301,4 +301,170 @@ void Server::_handleTopic(Client* client, const std::vector<std::string>& params
         return;
     }
     
-    std::string channelName = param
+    std::string channelName = params[0];
+    
+    Channel* channel = getChannel(channelName);
+    if (!channel) {
+        _sendNumericReply(client, ERR_NOSUCHCHANNEL, channelName + " :No such channel");
+        return;
+    }
+    
+    if (!channel->hasClient(client)) {
+        _sendNumericReply(client, ERR_NOTONCHANNEL, channelName + " :You're not on that channel");
+        return;
+    }
+    
+    if (params.size() == 1) {
+        // Display current topic
+        if (channel->getTopic().empty()) {
+            _sendNumericReply(client, 331, channelName + " :No topic is set");
+        } else {
+            _sendNumericReply(client, RPL_TOPIC, channelName + " :" + channel->getTopic());
+        }
+    } else {
+        // Set new topic
+        if (channel->isTopicRestricted() && !channel->isOperator(client)) {
+            _sendNumericReply(client, ERR_CHANOPRIVSNEEDED, channelName + " :You're not channel operator");
+            return;
+        }
+        
+        std::string newTopic = params[1];
+        channel->setTopic(newTopic);
+        
+        std::string topicMsg = ":" + client->getPrefix() + " TOPIC " + channelName + " :" + newTopic;
+        _sendToChannel(channel, topicMsg);
+    }
+}
+
+void Server::_handleMode(Client* client, const std::vector<std::string>& params) {
+    if (!client->isRegistered()) return;
+    
+    if (params.empty()) {
+        _sendNumericReply(client, ERR_NEEDMOREPARAMS, "MODE :Not enough parameters");
+        return;
+    }
+    
+    std::string channelName = params[0];
+    
+    Channel* channel = getChannel(channelName);
+    if (!channel) {
+        _sendNumericReply(client, ERR_NOSUCHCHANNEL, channelName + " :No such channel");
+        return;
+    }
+    
+    if (!channel->hasClient(client)) {
+        _sendNumericReply(client, ERR_NOTONCHANNEL, channelName + " :You're not on that channel");
+        return;
+    }
+    
+    if (params.size() == 1) {
+        // Display current modes
+        _sendNumericReply(client, 324, channelName + " " + channel->getModeString());
+        return;
+    }
+    
+    if (!channel->isOperator(client)) {
+        _sendNumericReply(client, ERR_CHANOPRIVSNEEDED, channelName + " :You're not channel operator");
+        return;
+    }
+    
+    std::string modes = params[1];
+    bool adding = true;
+    size_t paramIndex = 2;
+    
+    for (size_t i = 0; i < modes.length(); i++) {
+        char mode = modes[i];
+        
+        if (mode == '+') {
+            adding = true;
+        } else if (mode == '-') {
+            adding = false;
+        } else if (mode == 'i') {
+            channel->setInviteOnly(adding);
+        } else if (mode == 't') {
+            channel->setTopicRestricted(adding);
+        } else if (mode == 'k') {
+            if (adding) {
+                if (paramIndex < params.size()) {
+                    channel->setKey(params[paramIndex++]);
+                }
+            } else {
+                channel->removeKey();
+            }
+        } else if (mode == 'l') {
+            if (adding) {
+                if (paramIndex < params.size()) {
+                    int limit = atoi(params[paramIndex++].c_str());
+                    if (limit > 0) {
+                        channel->setUserLimit(limit);
+                    }
+                }
+            } else {
+                channel->removeUserLimit();
+            }
+        } else if (mode == 'o') {
+            if (paramIndex < params.size()) {
+                std::string targetNick = params[paramIndex++];
+                Client* targetClient = getClientByNick(targetNick);
+                if (targetClient && channel->hasClient(targetClient)) {
+                    if (adding) {
+                        channel->addOperator(targetClient);
+                    } else {
+                        channel->removeOperator(targetClient);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Send mode change notification
+    std::string modeMsg = ":" + client->getPrefix() + " MODE " + channelName + " " + params[1];
+    for (size_t i = 2; i < params.size(); i++) {
+        modeMsg += " " + params[i];
+    }
+    _sendToChannel(channel, modeMsg);
+}
+
+void Server::_sendToChannel(Channel* channel, const std::string& message, Client* exclude) {
+    if (!channel) return;
+    
+    const std::set<Client*>& clients = channel->getClients();
+    for (std::set<Client*>::const_iterator it = clients.begin(); it != clients.end(); ++it) {
+        if (*it != exclude) {
+            _sendToClient((*it)->getFd(), message);
+        }
+    }
+}
+
+bool Server::_isValidNickname(const std::string& nickname) {
+    if (nickname.empty() || nickname.length() > 9) {
+        return false;
+    }
+    
+    // First character must be a letter
+    if (!isalpha(nickname[0])) {
+        return false;
+    }
+    
+    // Rest can be letters, digits, or specific characters
+    for (size_t i = 1; i < nickname.length(); i++) {
+        char c = nickname[i];
+        if (!isalnum(c) && c != '_' && c != '-' && c != '[' && c != ']' && 
+            c != '{' && c != '}' && c != '\\' && c != '|') {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
+void Server::_sendWelcomeSequence(Client* client) {
+    std::string nick = client->getNickname();
+    std::string user = client->getUsername();
+    std::string host = client->getHostname();
+    
+    _sendNumericReply(client, RPL_WELCOME, ":Welcome to the " + _serverName + " Network " + nick + "!" + user + "@" + host);
+    _sendNumericReply(client, RPL_YOURHOST, ":Your host is " + _serverName + ", running version " + _serverVersion);
+    _sendNumericReply(client, RPL_CREATED, ":This server was created " + _creationDate);
+    _sendNumericReply(client, RPL_MYINFO, _serverName + " " + _serverVersion + " o itkol");
+}
