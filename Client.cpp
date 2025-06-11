@@ -3,7 +3,7 @@
 #include "Server.hpp"
 
 Client::Client(int fd, Server* server) 
-    : _fd(fd), _server(server), _authenticated(false), _registered(false), _passwordProvided(false) {
+    : _fd(fd), _authenticated(false), _registered(false), _passwordProvided(false), _server(server) {
     _hostname = "localhost";
 }
 
