@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <ctime>
 
 class Channel;
 class Server;
@@ -20,15 +21,24 @@ private:
     bool _authenticated;
     bool _registered;
     bool _passwordProvided;
+    bool _operator;
     
     std::set<Channel*> _channels;
     Server* _server;
+    
+    time_t _connectTime;
+    time_t _lastActivity;
+    size_t _messageCount;
+    time_t _lastMessageTime;
+    
+    static const size_t MAX_BUFFER_SIZE = 8192;
+    static const size_t MAX_MESSAGE_LENGTH = 512;
+    static const size_t MAX_CHANNELS = 20;
     
 public:
     Client(int fd, Server* server);
     ~Client();
     
-    // Getters
     int getFd() const { return _fd; }
     const std::string& getNickname() const { return _nickname; }
     const std::string& getUsername() const { return _username; }
@@ -38,32 +48,41 @@ public:
     bool isAuthenticated() const { return _authenticated; }
     bool isRegistered() const { return _registered; }
     bool hasPasswordProvided() const { return _passwordProvided; }
+    bool isOperator() const { return _operator; }
     const std::set<Channel*>& getChannels() const { return _channels; }
+    time_t getConnectTime() const { return _connectTime; }
+    time_t getLastActivity() const { return _lastActivity; }
+    size_t getMessageCount() const { return _messageCount; }
     
-    // Setters
-    void setNickname(const std::string& nickname) { _nickname = nickname; }
-    void setUsername(const std::string& username) { _username = username; }
-    void setRealname(const std::string& realname) { _realname = realname; }
-    void setHostname(const std::string& hostname) { _hostname = hostname; }
+    void setNickname(const std::string& nickname);
+    void setUsername(const std::string& username);
+    void setRealname(const std::string& realname);
+    void setHostname(const std::string& hostname);
     void setAuthenticated(bool auth) { _authenticated = auth; }
     void setPasswordProvided(bool provided) { _passwordProvided = provided; }
+    void setOperator(bool op) { _operator = op; }
     
-    // Buffer management
     void appendToBuffer(const std::string& data);
     std::vector<std::string> extractMessages();
     void clearBuffer() { _buffer.clear(); }
+    bool isBufferFull() const { return _buffer.length() >= MAX_BUFFER_SIZE; }
     
-    // Channel management
     void joinChannel(Channel* channel);
     void leaveChannel(Channel* channel);
     bool isInChannel(Channel* channel) const;
+    bool canJoinMoreChannels() const { return _channels.size() < MAX_CHANNELS; }
     
-    // Registration
     void tryRegister();
+    void updateActivity();
+    void incrementMessageCount();
     
-    // Utility
     std::string getPrefix() const;
     std::string getFullIdentifier() const;
+    std::string getMask() const;
+    int getIdleTime() const;
+    
+    bool isValidNickname(const std::string& nickname) const;
+    bool isValidUsername(const std::string& username) const;
 };
 
 #endif
