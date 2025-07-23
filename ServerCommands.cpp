@@ -14,6 +14,13 @@ void Server::_parseCommand(Client* client, const std::string& command) {
     
     std::vector<std::string> params(tokens.begin() + 1, tokens.end());
     
+    if (cmd == "CAP") {
+        if (!params.empty() && params[0] == "LS") {
+            _sendToClient(client->getFd(), "CAP * LS :");
+        }
+        return;
+    }
+    
     if (cmd == "PASS") {
         _handlePass(client, params);
     } else if (cmd == "NICK") {
@@ -89,6 +96,11 @@ void Server::_handlePass(Client* client, const std::vector<std::string>& params)
 }
 
 void Server::_handleNick(Client* client, const std::vector<std::string>& params) {
+    if (!client->hasPasswordProvided() && !_password.empty()) {
+        _sendNumericReply(client, ERR_NOTREGISTERED, ":Password required");
+        return;
+    }
+    
     if (params.empty()) {
         _sendNumericReply(client, ERR_NONICKNAMEGIVEN, ":No nickname given");
         return;
@@ -136,6 +148,11 @@ void Server::_handleNick(Client* client, const std::vector<std::string>& params)
 }
 
 void Server::_handleUser(Client* client, const std::vector<std::string>& params) {
+    if (!client->hasPasswordProvided() && !_password.empty()) {
+        _sendNumericReply(client, ERR_NOTREGISTERED, ":Password required");
+        return;
+    }
+    
     if (client->isRegistered()) {
         _sendNumericReply(client, ERR_ALREADYREGISTRED, ":You may not reregister");
         return;
@@ -207,6 +224,10 @@ void Server::_handleJoin(Client* client, const std::vector<std::string>& params)
         }
         
         Channel* ch = _getOrCreateChannel(channelName);
+        if (!ch) {
+            _sendNumericReply(client, ERR_NOSUCHCHANNEL, channelName + " :Channel creation failed");
+            continue;
+        }
         
         if (ch->hasClient(client)) {
             continue;
@@ -316,6 +337,11 @@ void Server::_handlePrivmsg(Client* client, const std::vector<std::string>& para
             }
             
             if (!channel->hasClient(client)) {
+                _sendNumericReply(client, ERR_CANNOTSENDTOCHAN, target + " :Cannot send to channel");
+                continue;
+            }
+            
+            if (!channel->canSpeak(client)) {
                 _sendNumericReply(client, ERR_CANNOTSENDTOCHAN, target + " :Cannot send to channel");
                 continue;
             }
@@ -503,7 +529,7 @@ void Server::_handleTopic(Client* client, const std::vector<std::string>& params
             newTopic = newTopic.substr(0, 307);
         }
         
-        channel->setTopic(newTopic);
+        channel->setTopic(newTopic, client);
         
         std::string topicMsg = ":" + client->getPrefix() + " TOPIC " + channelName + " :" + newTopic;
         _sendToChannel(channel, topicMsg);
@@ -576,9 +602,13 @@ void Server::_handleMode(Client* client, const std::vector<std::string>& params)
                 if (adding) {
                     if (paramIndex < params.size()) {
                         std::string key = params[paramIndex++];
-                        channel->setKey(key);
-                        appliedModes += 'k';
-                        appliedParams += " " + key;
+                        if (key.find(' ') == std::string::npos && 
+                            key.find(',') == std::string::npos &&
+                            key.find(7) == std::string::npos) {
+                            channel->setKey(key);
+                            appliedModes += 'k';
+                            appliedParams += " " + key;
+                        }
                     }
                 } else {
                     if (channel->hasKey()) {
@@ -619,7 +649,7 @@ void Server::_handleMode(Client* client, const std::vector<std::string>& params)
             }
         }
         
-        if (!appliedModes.empty()) {
+        if (!appliedModes.empty() && appliedModes != "+" && appliedModes != "-") {
             std::string modeMsg = ":" + client->getPrefix() + " MODE " + target + " " + appliedModes + appliedParams;
             _sendToChannel(channel, modeMsg);
             _logMessage("INFO", client->getNickname() + " set mode " + appliedModes + " on " + target);

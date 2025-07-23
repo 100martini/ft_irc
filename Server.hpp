@@ -141,6 +141,7 @@ public:
     
     bool isRunning() const { return _running; }
     bool isValidPassword(const std::string& password) const;
+    void sendToClient(int clientFd, const std::string& message);
     
     static Server* instance;
     static void signalHandler(int signum);

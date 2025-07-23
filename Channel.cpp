@@ -1,12 +1,13 @@
 #include "Channel.hpp"
 #include "Client.hpp"
+#include "Server.hpp"
 #include <sstream>
 #include <algorithm>
 
 Channel::Channel(const std::string& name) 
     : _name(name), _topicSetTime(0), _inviteOnly(false), _topicRestricted(true), 
       _hasKey(false), _moderated(false), _noExternalMessages(true), 
-      _secret(false), _private(false), _userLimit(0) {
+      _secret(false), _private(false), _userLimit(0), _server(NULL) {
     
     time(&_creationTime);
 }
@@ -35,6 +36,12 @@ void Channel::setTopic(const std::string& topic, Client* setter) {
 }
 
 void Channel::setKey(const std::string& key) {
+    if (key.find(' ') != std::string::npos || 
+        key.find(',') != std::string::npos ||
+        key.find(7) != std::string::npos) {
+        return; 
+    }
+    
     if (key.length() > MAX_KEY_LENGTH) {
         _key = key.substr(0, MAX_KEY_LENGTH);
     } else {
@@ -176,8 +183,13 @@ bool Channel::canSpeak(Client* client) const {
 }
 
 void Channel::broadcast(const std::string& message, Client* exclude) {
-    (void)message;
-    (void)exclude;
+    if (!_server) return;
+    
+    for (std::set<Client*>::const_iterator it = _clients.begin(); it != _clients.end(); ++it) {
+        if (*it != exclude && (*it)->getFd() >= 0) {
+            _server->sendToClient((*it)->getFd(), message);
+        }
+    }
 }
 
 std::string Channel::getModeString() const {

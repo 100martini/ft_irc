@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <limits>
+#include <new>
 
 void printBanner() {
     std::cout << BOLD << CYAN << std::endl;
@@ -76,6 +77,7 @@ void printServerInfo() {
     std::cout << "  • " << MAGENTA << "User authentication and registration" << RESET << std::endl;
     std::cout << "  • " << MAGENTA << "Server statistics and information commands" << RESET << std::endl;
     std::cout << "  • " << MAGENTA << "Graceful shutdown handling" << RESET << std::endl;
+    std::cout << "  • " << MAGENTA << "Memory-safe implementation" << RESET << std::endl;
     std::cout << std::endl;
 }
 
@@ -129,13 +131,23 @@ int main(int argc, char* argv[]) {
     std::cout << std::endl;
     
     try {
-        Server server(port, password);
+        Server* server = NULL;
+        
+        try {
+            server = new Server(port, password);
+        } catch (const std::bad_alloc& e) {
+            std::cout << RED << BOLD << "Fatal Error: " << RESET << RED 
+                      << "Failed to allocate memory for server" << RESET << std::endl;
+            return 1;
+        }
         
         std::cout << GREEN << "Server initialized successfully!" << RESET << std::endl;
         std::cout << "Ready to accept connections..." << std::endl;
         std::cout << std::endl;
         
-        server.start();
+        server->start();
+        
+        delete server;
         
     } catch (const std::exception& e) {
         std::cout << std::endl << RED << BOLD << "Server Error: " << RESET << RED 

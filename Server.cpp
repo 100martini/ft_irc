@@ -1,6 +1,7 @@
 #include "Server.hpp"
 #include "Client.hpp"
 #include "Channel.hpp"
+#include <new>
 
 Server* Server::instance = NULL;
 
@@ -88,8 +89,13 @@ void Server::start() {
                 continue;
             }
             
-            for (size_t i = 0; i < _pollFds.size() && _running; i++) {
-                if (_pollFds[i].revents == 0) continue;
+            for (size_t i = 0; i < _pollFds.size() && _running; ) {
+                if (_pollFds[i].revents == 0) {
+                    i++;
+                    continue;
+                }
+                
+                bool clientRemoved = false;
                 
                 if (_pollFds[i].revents & POLLIN) {
                     if (_pollFds[i].fd == _serverSocket) {
@@ -102,7 +108,11 @@ void Server::start() {
                 if (_pollFds[i].revents & (POLLHUP | POLLERR | POLLNVAL)) {
                     _logMessage("WARNING", "Client connection error on fd " + intToString(_pollFds[i].fd));
                     _disconnectClient(_pollFds[i].fd, "Connection error");
-                    break;
+                    clientRemoved = true;
+                }
+                
+                if (!clientRemoved) {
+                    i++;
                 }
             }
         }
@@ -219,7 +229,15 @@ void Server::_acceptNewClient() {
         _logMessage("WARNING", "Failed to set keepalive on client socket");
     }
     
-    Client* client = new Client(clientFd, this);
+    Client* client = NULL;
+    try {
+        client = new Client(clientFd, this);
+    } catch (const std::bad_alloc& e) {
+        close(clientFd);
+        _logMessage("ERROR", "Memory allocation failed for new client");
+        return;
+    }
+    
     std::string hostname = inet_ntoa(clientAddr.sin_addr);
     client->setHostname(hostname);
     
@@ -430,9 +448,15 @@ bool Server::_isValidChannelName(const std::string& channelName) {
 Channel* Server::_getOrCreateChannel(const std::string& channelName) {
     Channel* channel = getChannel(channelName);
     if (!channel) {
-        channel = new Channel(channelName);
-        _channels[channelName] = channel;
-        _logMessage("INFO", "Channel created: " + channelName);
+        try {
+            channel = new Channel(channelName);
+            channel->setServer(this);
+            _channels[channelName] = channel;
+            _logMessage("INFO", "Channel created: " + channelName);
+        } catch (const std::bad_alloc& e) {
+            _logMessage("ERROR", "Failed to allocate memory for channel: " + channelName);
+            return NULL;
+        }
     }
     return channel;
 }
@@ -562,6 +586,10 @@ void Server::_sendToChannel(Channel* channel, const std::string& message, Client
             _sendToClient((*it)->getFd(), message);
         }
     }
+}
+
+void Server::sendToClient(int clientFd, const std::string& message) {
+    _sendToClient(clientFd, message);
 }
 
 void Server::_sendWelcomeSequence(Client* client) {

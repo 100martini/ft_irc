@@ -7,6 +7,7 @@
 #include <ctime>
 
 class Client;
+class Server;
 
 class Channel {
 private:
@@ -31,6 +32,7 @@ private:
     int _userLimit;
     
     time_t _creationTime;
+    Server* _server;
     
     static const size_t MAX_TOPIC_LENGTH = 307;
     static const size_t MAX_KEY_LENGTH = 23;
@@ -73,6 +75,7 @@ public:
     void setPrivate(bool priv) { _private = priv; }
     void setUserLimit(int limit);
     void removeUserLimit() { _userLimit = 0; }
+    void setServer(Server* server) { _server = server; }
     
     void addClient(Client* client);
     void removeClient(Client* client);
